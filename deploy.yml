@@ -6,20 +6,12 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
-
-    - name: Login to Docker Hub
-      run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-
-    - name: Build and Push Docker Image
-      run: |
-        docker build -t ${{ secrets.DOCKER_USERNAME }}/node-app:latest .
-        docker push ${{ secrets.DOCKER_USERNAME }}/node-app:latest
 
     - name: SSH into EC2 and Deploy
       uses: appleboy/ssh-action@v0.1.7
@@ -28,7 +20,22 @@ jobs:
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          docker pull ${{ secrets.DOCKER_USERNAME }}/node-app:latest
+          # Update the system and install Docker if not installed
+          sudo apt update
+          sudo apt install -y docker.io git
+
+          # Clone the repository (or pull latest changes)
+          if [ ! -d "app" ]; then
+            git clone https://github.com/${{ github.repository }} app
+          else
+            cd app
+            git pull origin main
+          fi
+
+          cd app
+
+          # Build and run the Docker container
           docker stop node-app || true
           docker rm node-app || true
-          docker run -d -p 80:3000 --name node-app ${{ secrets.DOCKER_USERNAME }}/node-app:latest
+          docker build -t node-app .
+          docker run -d -p 80:3000 --name node-app node-app
